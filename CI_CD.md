@@ -12,7 +12,7 @@ Dernière mise à jour : 8 août 2026.
 | Runtime Node configuré | `24.x` |
 | Dernier déploiement vu | `READY`, cible `production` |
 | Dépôt attendu | `faugera/trippieme_v2` |
-| État GitHub constaté | Dépôt vide : aucune CI GitHub ni synchronisation de code ne peut actuellement s’exécuter. |
+| État GitHub constaté | Le guide CI/CD est présent ; le code source applicatif reste à synchroniser. |
 
 ## Flux cible recommandé
 
@@ -67,4 +67,4 @@ Ne jamais les committer, les coller dans un ticket, ni les exposer via `NEXT_PUB
 
 ## Écart à fermer
 
-Le dépôt GitHub est vide à la date de ce document. Tant que le code n’y est pas poussé et que Vercel n’est pas connecté à `main`, les déploiements restent manuels et ne constituent pas un CI/CD fiable.
+Le code source applicatif n’est pas encore présent dans le dépôt. Tant qu’il n’y est pas poussé et que Vercel n’est pas connecté à `main`, les déploiements restent manuels et ne constituent pas un CI/CD fiable.
