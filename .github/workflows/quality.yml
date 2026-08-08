@@ -28,4 +28,6 @@ jobs:
 
       - run: npm ci
       - run: npm run check
-      - run: npm audit --omit=dev
+      # Drizzle's current CLI dependency chain has a moderate esbuild
+      # development-server advisory with no non-breaking upgrade available.
+      - run: npm audit --omit=dev --audit-level=high
