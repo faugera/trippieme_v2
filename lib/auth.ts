@@ -14,6 +14,8 @@ function createAuthInstance(db: NonNullable<ReturnType<typeof getDb>>, secret: s
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
@@ -21,7 +23,14 @@ function createAuthInstance(db: NonNullable<ReturnType<typeof getDb>>, secret: s
     trustedOrigins,
     secret,
     emailAndPassword: { enabled: true, minPasswordLength: 10 },
+    socialProviders: googleClientId && googleClientSecret
+      ? { google: { clientId: googleClientId, clientSecret: googleClientSecret } }
+      : undefined,
   });
+}
+
+export function isGoogleAuthConfigured() {
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
 let authInstance: ReturnType<typeof createAuthInstance> | undefined;
