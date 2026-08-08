@@ -12,7 +12,7 @@ Dernière mise à jour : 8 août 2026.
 | Runtime Node configuré | `24.x` |
 | Dernier déploiement vu | `READY`, cible `production` |
 | Dépôt attendu | `faugera/trippieme_v2` |
-| État GitHub constaté | Le guide CI/CD est présent ; le code source applicatif reste à synchroniser. |
+| État GitHub constaté | Le code source complet est versionné sur `main`. |
 
 ## Flux cible recommandé
 
@@ -28,11 +28,10 @@ flowchart LR
   E --> F[Production Vercel]
 ```
 
-1. Initialiser et pousser ce code dans `faugera/trippieme_v2`.
-2. Dans Vercel > **trippieme-london** > Settings > Git, connecter ce dépôt et définir `main` comme branche de production.
-3. Exiger une pull request avant merge vers `main` dans les règles GitHub.
-4. Vérifier l’URL Preview créée par Vercel à chaque pull request.
-5. Fusionner uniquement après les contrôles ci-dessous ; Vercel crée alors le déploiement de production automatiquement.
+1. Créer une branche de fonctionnalité depuis `main`.
+2. Ouvrir une pull request vers `main`.
+3. Vérifier l’URL Preview créée par Vercel et les contrôles ci-dessous.
+4. Fusionner uniquement après validation ; Vercel crée alors le déploiement de production automatiquement.
 
 ## Contrôles obligatoires avant merge
 
@@ -65,6 +64,6 @@ Ne jamais les committer, les coller dans un ticket, ni les exposer via `NEXT_PUB
 | Revenir en arrière | Vercel > Deployments > choisir le dernier déploiement sain > **Promote to Production** |
 | Révoquer une clé | Google AI Studio, puis remplacer la variable Vercel et redéployer |
 
-## Écart à fermer
+## État de référence
 
-Le code source applicatif n’est pas encore présent dans le dépôt. Tant qu’il n’y est pas poussé et que Vercel n’est pas connecté à `main`, les déploiements restent manuels et ne constituent pas un CI/CD fiable.
+`main` est la source de vérité de l’application. Toute correction doit partir d’une branche, être vérifiée sur Preview Vercel, puis fusionnée vers `main`.
