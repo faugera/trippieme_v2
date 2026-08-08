@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import type { Itinerary, ItineraryEditProposal, TripRequest } from '@/lib/trip-schema';
 
@@ -90,7 +91,6 @@ export default function TrippieMe() {
   const [showGenerator, setShowGenerator] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
   const [completed, setCompleted] = useState<string[]>([]);
   const storageReady = useRef(false);
 
@@ -137,7 +137,8 @@ export default function TrippieMe() {
     return () => { active = false; };
   }, [session?.user.id]);
 
-  const currentDay = itinerary.days[Math.min(activeDay, itinerary.days.length - 1)];
+  const safeActiveDay = Math.max(0, Math.min(activeDay, itinerary.days.length - 1));
+  const currentDay = itinerary.days[safeActiveDay] ?? itinerary.days[0];
   const tripDates = useMemo(() => {
     const first = itinerary.days[0]?.date;
     const last = itinerary.days.at(-1)?.date;
@@ -159,30 +160,37 @@ export default function TrippieMe() {
     setCompleted((values) => values.includes(key) ? values.filter((value) => value !== key) : [...values, key]);
   }
 
+  function selectDay(index: number) {
+    setActiveDay(Math.max(0, Math.min(index, itinerary.days.length - 1)));
+    setCollapsed(false);
+  }
+
+  if (!currentDay) return null;
+
   return <main className="tm-app">
-    <Topbar view={view} userName={session?.user.name} onTrips={() => setView('trips')} onMap={() => setView('trip')} onNew={() => setShowGenerator(true)} onAuth={() => setShowAuth(true)} onSignOut={() => { void authClient.signOut(); }} />
+    <Topbar view={view} userName={session?.user.name} onTrips={() => setView('trips')} onMap={() => setView('trip')} onNew={() => setShowGenerator(true)} onSignOut={() => { void authClient.signOut(); }} />
     {view === 'trips' ? <TripsView trips={savedTrips} onResume={(nextItinerary) => { setItinerary(nextItinerary); setActiveDay(0); setView('trip'); }} onNew={() => setShowGenerator(true)} /> : <>
       <section className="workspace">
-        <MapPanel day={currentDay} dayNumber={activeDay + 1} />
+        <MapPanel day={currentDay} dayNumber={safeActiveDay + 1} />
         <aside className="trip-panel">
           <div className="trip-meta">VOYAGE ACTIF · ENREGISTRÉ SUR CET APPAREIL</div>
           <div className="title-row"><div><h1>{itinerary.title}</h1><p>{tripDates} <span>•</span> programme personnalisé</p></div></div>
           <div className="segment"><button className="selected">Programme</button><button onClick={() => setShowAssistant(true)}>✦ Assistant IA</button></div>
-          <div className="day-strip">{itinerary.days.map((item, index) => <button key={item.date} className={index === activeDay ? 'active' : ''} onClick={() => setActiveDay(index)}><b>J{index + 1}</b><span>{formatDate(item.date, { weekday: 'short', day: 'numeric' })}</span></button>)}</div>
+          <div className="day-navigation" aria-label="Navigation entre les journées"><button type="button" onClick={() => selectDay(safeActiveDay - 1)} disabled={safeActiveDay === 0}>← Jour précédent</button><span>Jour {safeActiveDay + 1} sur {itinerary.days.length}</span><button type="button" onClick={() => selectDay(safeActiveDay + 1)} disabled={safeActiveDay === itinerary.days.length - 1}>Jour suivant →</button></div>
+          <div className="day-strip" role="tablist" aria-label="Journées du voyage">{itinerary.days.map((item, index) => <button type="button" role="tab" aria-selected={index === safeActiveDay} key={item.date} className={index === safeActiveDay ? 'active' : ''} onClick={() => selectDay(index)}><b>J{index + 1}</b><span>{formatDate(item.date, { weekday: 'short', day: 'numeric' })}</span></button>)}</div>
           <div className="program-head"><div><span>{formatDate(currentDay.date, { weekday: 'long', day: 'numeric', month: 'long' })}</span><h2>{currentDay.theme}</h2></div><span className="weather">Programme</span></div>
-          <div className={collapsed ? 'timeline collapsed' : 'timeline'}>{currentDay.activities.map((activity, index) => <StopCard key={`${activity.time}-${activity.title}`} activity={activity} index={index} complete={completed.includes(`${activeDay}:${index}`)} onToggle={() => toggleCompleted(activeDay, index)} onAsk={() => setShowAssistant(true)} />)}</div>
+          <div className={collapsed ? 'timeline collapsed' : 'timeline'}>{currentDay.activities.map((activity, index) => <StopCard key={`${activity.time}-${activity.title}`} activity={activity} index={index} complete={completed.includes(`${safeActiveDay}:${index}`)} onToggle={() => toggleCompleted(safeActiveDay, index)} onAsk={() => setShowAssistant(true)} />)}</div>
           <div className="program-actions"><button onClick={() => setShowAssistant(true)}>✦ Modifier avec l’IA</button><button onClick={shareTrip}>↗ Partager</button><button className="round-action" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'Déplier le programme' : 'Masquer le programme'}>{collapsed ? '⌄' : '⌃'}</button></div>
         </aside>
       </section>
       {showAssistant && <AssistantModal itinerary={itinerary} onApply={setItinerary} onClose={() => setShowAssistant(false)} />}
     </>}
     {showGenerator && <GeneratorModal onClose={() => setShowGenerator(false)} onCreate={(nextItinerary) => { setItinerary(nextItinerary); setActiveDay(0); setView('trip'); setShowGenerator(false); }} />}
-    {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
   </main>;
 }
 
-function Topbar({ view, userName, onTrips, onMap, onNew, onAuth, onSignOut }: { view: 'trip' | 'trips'; userName?: string; onTrips: () => void; onMap: () => void; onNew: () => void; onAuth: () => void; onSignOut: () => void }) {
-  return <header className="tm-topbar"><button className="tm-brand" onClick={onMap}><i>T</i><strong>TrippieMe</strong></button><div className="top-actions">{view === 'trip' ? <button className="outline" onClick={onTrips}>▦ Mes voyages</button> : <button className="outline" onClick={onMap}>← Retour à la carte</button>}{userName ? <button className="outline" onClick={onSignOut}>⌁ {userName} · Quitter</button> : <button className="outline" onClick={onAuth}>⌁ Se connecter</button>}<button className="dark" onClick={onNew}>＋ <span className="new-label">Nouveau voyage</span></button></div></header>;
+function Topbar({ view, userName, onTrips, onMap, onNew, onSignOut }: { view: 'trip' | 'trips'; userName?: string; onTrips: () => void; onMap: () => void; onNew: () => void; onSignOut: () => void }) {
+  return <header className="tm-topbar"><button className="tm-brand" onClick={onMap}><i>T</i><strong>TrippieMe</strong></button><div className="top-actions">{view === 'trip' ? <button className="outline" onClick={onTrips}>▦ Mes voyages</button> : <button className="outline" onClick={onMap}>← Retour à la carte</button>}{userName ? <button className="outline" onClick={onSignOut}>⌁ {userName} · Quitter</button> : <Link className="outline auth-link" href={{ pathname: '/auth', query: { returnTo: '/' } }}>⌁ Se connecter</Link>}<button className="dark" onClick={onNew}>＋ <span className="new-label">Nouveau voyage</span></button></div></header>;
 }
 
 function MapPanel({ day, dayNumber }: { day: Itinerary['days'][number]; dayNumber: number }) {
@@ -221,32 +229,6 @@ function AssistantModal({ itinerary, onApply, onClose }: { itinerary: Itinerary;
   const [instruction, setInstruction] = useState(''); const [proposal, setProposal] = useState<ItineraryEditProposal>(); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); if (!instruction.trim()) return; setError(''); setLoading(true); try { const result = await postJson<{ proposal: ItineraryEditProposal }>('/api/trips/edit', { instruction, itinerary }); setProposal(result.proposal); } catch (cause) { setError(cause instanceof Error ? cause.message : 'La proposition n’a pas pu être préparée.'); } finally { setLoading(false); } }
   return <Modal onClose={onClose}><section className="assistant-popover"><div><button className="close" onClick={onClose} aria-label="Fermer">×</button><p>✦ ASSISTANT TRIPPIEME</p><h2>Modifier votre itinéraire</h2><form onSubmit={submit}><input value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Ex. ajoute une journée aux studios Harry Potter" autoFocus /><button className="dark" disabled={loading}>{loading ? 'Préparation…' : 'Préparer une proposition'}</button></form>{error && <p className="form-error" role="alert">{error}</p>}{proposal && <div className="proposal"><b>PROPOSITION · {proposal.changes.length} MODIFICATION{proposal.changes.length > 1 ? 'S' : ''}</b><p>{proposal.summary}</p><ul>{proposal.changes.map((change) => <li key={change}>{change}</li>)}</ul><footer><button className="dark" onClick={() => { onApply(proposal.itinerary); onClose(); }}>Appliquer</button><button onClick={() => setProposal(undefined)}>Annuler</button></footer></div>}</div></section></Modal>;
-}
-
-function AuthModal({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError('');
-    setLoading(true);
-    const result = mode === 'signup'
-      ? await authClient.signUp.email({ name, email, password })
-      : await authClient.signIn.email({ email, password, rememberMe: true });
-    setLoading(false);
-    if (result.error) {
-      setError(result.error.message ?? 'Connexion impossible. Vérifie tes informations puis réessaie.');
-      return;
-    }
-    onClose();
-  }
-
-  return <Modal onClose={onClose}><section className="assistant-popover auth-modal"><div><button className="close" onClick={onClose} aria-label="Fermer">×</button><p>COMPTE TRIPPIEME</p><h2>{mode === 'signin' ? 'Retrouver mes voyages' : 'Créer mon espace voyage'}</h2><form onSubmit={submit}>{mode === 'signup' && <label>Prénom ou nom<input required value={name} onChange={(event) => setName(event.target.value)} minLength={2} autoComplete="name" /></label>}<label>Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label><label>Mot de passe<input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={10} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="dark" disabled={loading}>{loading ? 'Patientez…' : mode === 'signin' ? 'Se connecter' : 'Créer mon compte'}</button></form><button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>{mode === 'signin' ? 'Pas encore de compte ? Créer mon espace' : 'Déjà un compte ? Se connecter'}</button></div></section></Modal>;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
