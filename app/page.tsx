@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { authClient } from '@/lib/auth-client';
 import type { Itinerary, ItineraryEditProposal, TripRequest } from '@/lib/trip-schema';
 
 const STORAGE_KEY = 'trippieme.active-itinerary.v1';
@@ -81,6 +82,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 }
 
 export default function TrippieMe() {
+  const { data: session } = authClient.useSession();
   const [view, setView] = useState<'trip' | 'trips'>('trip');
   const [itinerary, setItinerary] = useState<Itinerary>(INITIAL_ITINERARY);
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>([]);
@@ -88,6 +90,7 @@ export default function TrippieMe() {
   const [showGenerator, setShowGenerator] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [completed, setCompleted] = useState<string[]>([]);
   const storageReady = useRef(false);
 
@@ -110,7 +113,29 @@ export default function TrippieMe() {
       window.localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify(next));
       return next;
     });
-  }, [itinerary]);
+    if (session?.user.id) {
+      void fetch('/api/trips', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itinerary }),
+      });
+    }
+  }, [itinerary, session?.user.id]);
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+    let active = true;
+    void fetch('/api/trips')
+      .then(async (response) => response.ok ? response.json() as Promise<{ trips: SavedTrip[] }> : null)
+      .then((payload) => {
+        if (!active || !payload?.trips?.length) return;
+        setSavedTrips(payload.trips);
+        setItinerary(payload.trips[0].itinerary);
+        setActiveDay(0);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [session?.user.id]);
 
   const currentDay = itinerary.days[Math.min(activeDay, itinerary.days.length - 1)];
   const tripDates = useMemo(() => {
@@ -135,7 +160,7 @@ export default function TrippieMe() {
   }
 
   return <main className="tm-app">
-    <Topbar view={view} onTrips={() => setView('trips')} onMap={() => setView('trip')} onNew={() => setShowGenerator(true)} />
+    <Topbar view={view} userName={session?.user.name} onTrips={() => setView('trips')} onMap={() => setView('trip')} onNew={() => setShowGenerator(true)} onAuth={() => setShowAuth(true)} onSignOut={() => { void authClient.signOut(); }} />
     {view === 'trips' ? <TripsView trips={savedTrips} onResume={(nextItinerary) => { setItinerary(nextItinerary); setActiveDay(0); setView('trip'); }} onNew={() => setShowGenerator(true)} /> : <>
       <section className="workspace">
         <MapPanel day={currentDay} dayNumber={activeDay + 1} />
@@ -152,11 +177,12 @@ export default function TrippieMe() {
       {showAssistant && <AssistantModal itinerary={itinerary} onApply={setItinerary} onClose={() => setShowAssistant(false)} />}
     </>}
     {showGenerator && <GeneratorModal onClose={() => setShowGenerator(false)} onCreate={(nextItinerary) => { setItinerary(nextItinerary); setActiveDay(0); setView('trip'); setShowGenerator(false); }} />}
+    {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
   </main>;
 }
 
-function Topbar({ view, onTrips, onMap, onNew }: { view: 'trip' | 'trips'; onTrips: () => void; onMap: () => void; onNew: () => void }) {
-  return <header className="tm-topbar"><button className="tm-brand" onClick={onMap}><i>T</i><strong>TrippieMe</strong></button><div className="top-actions">{view === 'trip' ? <button className="outline" onClick={onTrips}>▦ Mes voyages</button> : <button className="outline" onClick={onMap}>← Retour à la carte</button>}<button className="dark" onClick={onNew}>＋ <span className="new-label">Nouveau voyage</span></button></div></header>;
+function Topbar({ view, userName, onTrips, onMap, onNew, onAuth, onSignOut }: { view: 'trip' | 'trips'; userName?: string; onTrips: () => void; onMap: () => void; onNew: () => void; onAuth: () => void; onSignOut: () => void }) {
+  return <header className="tm-topbar"><button className="tm-brand" onClick={onMap}><i>T</i><strong>TrippieMe</strong></button><div className="top-actions">{view === 'trip' ? <button className="outline" onClick={onTrips}>▦ Mes voyages</button> : <button className="outline" onClick={onMap}>← Retour à la carte</button>}{userName ? <button className="outline" onClick={onSignOut}>⌁ {userName} · Quitter</button> : <button className="outline" onClick={onAuth}>⌁ Se connecter</button>}<button className="dark" onClick={onNew}>＋ <span className="new-label">Nouveau voyage</span></button></div></header>;
 }
 
 function MapPanel({ day, dayNumber }: { day: Itinerary['days'][number]; dayNumber: number }) {
@@ -195,6 +221,32 @@ function AssistantModal({ itinerary, onApply, onClose }: { itinerary: Itinerary;
   const [instruction, setInstruction] = useState(''); const [proposal, setProposal] = useState<ItineraryEditProposal>(); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); if (!instruction.trim()) return; setError(''); setLoading(true); try { const result = await postJson<{ proposal: ItineraryEditProposal }>('/api/trips/edit', { instruction, itinerary }); setProposal(result.proposal); } catch (cause) { setError(cause instanceof Error ? cause.message : 'La proposition n’a pas pu être préparée.'); } finally { setLoading(false); } }
   return <Modal onClose={onClose}><section className="assistant-popover"><div><button className="close" onClick={onClose} aria-label="Fermer">×</button><p>✦ ASSISTANT TRIPPIEME</p><h2>Modifier votre itinéraire</h2><form onSubmit={submit}><input value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Ex. ajoute une journée aux studios Harry Potter" autoFocus /><button className="dark" disabled={loading}>{loading ? 'Préparation…' : 'Préparer une proposition'}</button></form>{error && <p className="form-error" role="alert">{error}</p>}{proposal && <div className="proposal"><b>PROPOSITION · {proposal.changes.length} MODIFICATION{proposal.changes.length > 1 ? 'S' : ''}</b><p>{proposal.summary}</p><ul>{proposal.changes.map((change) => <li key={change}>{change}</li>)}</ul><footer><button className="dark" onClick={() => { onApply(proposal.itinerary); onClose(); }}>Appliquer</button><button onClick={() => setProposal(undefined)}>Annuler</button></footer></div>}</div></section></Modal>;
+}
+
+function AuthModal({ onClose }: { onClose: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setLoading(true);
+    const result = mode === 'signup'
+      ? await authClient.signUp.email({ name, email, password })
+      : await authClient.signIn.email({ email, password, rememberMe: true });
+    setLoading(false);
+    if (result.error) {
+      setError(result.error.message ?? 'Connexion impossible. Vérifie tes informations puis réessaie.');
+      return;
+    }
+    onClose();
+  }
+
+  return <Modal onClose={onClose}><section className="assistant-popover auth-modal"><div><button className="close" onClick={onClose} aria-label="Fermer">×</button><p>COMPTE TRIPPIEME</p><h2>{mode === 'signin' ? 'Retrouver mes voyages' : 'Créer mon espace voyage'}</h2><form onSubmit={submit}>{mode === 'signup' && <label>Prénom ou nom<input required value={name} onChange={(event) => setName(event.target.value)} minLength={2} autoComplete="name" /></label>}<label>Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label><label>Mot de passe<input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={10} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="dark" disabled={loading}>{loading ? 'Patientez…' : mode === 'signin' ? 'Se connecter' : 'Créer mon compte'}</button></form><button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>{mode === 'signin' ? 'Pas encore de compte ? Créer mon espace' : 'Déjà un compte ? Se connecter'}</button></div></section></Modal>;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
